@@ -47,3 +47,10 @@ next-env.d.ts
 !.env.development
 !.env.staging
 !.env.production
+!.env.example
+
+# Keep runtime env files in env/ (ignored). Allow examples and a placeholder so the
+# directory can be committed.
+env/*
+!env/*.example
+!env/.gitkeep
