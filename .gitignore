@@ -43,23 +43,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# But KEEP these specific ones (exceptions)
-!.env.development
-!.env.staging
-!.env.production
-!.env.example
-
-# Keep runtime env files in env/ (ignored by default).
-# We commit development, staging and production runtime envs, but keep local
-# developer-specific envs out of version control. Examples and a placeholder are
-# kept when appropriate.
-env/*
-!env/.gitkeep
-
 # Commit these runtime envs (tracked in this repo)
 !env/.env.development
 !env/.env.staging
 !env/.env.production
-
-# Keep only the local example in the repo. Real local envs should not be committed.
 !env/.env.local.example
