@@ -90,13 +90,33 @@ for ENV in dev stage prod; do
   # 3. Grant Service Account Token Creator role to the Workload Identity Pool
   # This allows GitHub Actions to impersonate the service account
   WORKLOAD_IDENTITY_USER="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${WIF_POOL_ID}/attribute.repository/${GITHUB_OWNER}/${GITHUB_REPO}"
+  
+  echo "  🔍 Expected binding: ${WORKLOAD_IDENTITY_USER}"
     
-  # Check if binding exists
+  # Remove any incorrect bindings first (cleanup)
+  echo "  🧹 Cleaning up any incorrect bindings..."
+  gcloud iam service-accounts get-iam-policy ${SA_EMAIL} \
+    --project=${PROJECT_ID} \
+    --format=json 2>/dev/null | \
+    jq -r ".bindings[]? | select(.role==\"roles/iam.workloadIdentityUser\") | .members[]? | select(. | contains(\"${WIF_POOL_ID}\"))" 2>/dev/null | \
+    while read -r existing_member; do
+      if [[ "${existing_member}" != "${WORKLOAD_IDENTITY_USER}" ]]; then
+        echo "  🗑️  Removing incorrect binding: ${existing_member}"
+        gcloud iam service-accounts remove-iam-policy-binding ${SA_EMAIL} \
+          --project=${PROJECT_ID} \
+          --role="roles/iam.workloadIdentityUser" \
+          --member="${existing_member}" \
+          --quiet 2>/dev/null || true
+      fi
+    done
+  
+  # Check if correct binding exists
   EXISTING_BINDING=$(gcloud iam service-accounts get-iam-policy ${SA_EMAIL} \
     --project=${PROJECT_ID} \
-    --format=json 2>/dev/null | jq -r ".bindings[] | select(.role==\"roles/iam.workloadIdentityUser\") | .members[] | select(. | contains(\"${WIF_POOL_ID}\"))" 2>/dev/null || echo "")
+    --format=json 2>/dev/null | jq -r ".bindings[] | select(.role==\"roles/iam.workloadIdentityUser\") | .members[] | select(. == \"${WORKLOAD_IDENTITY_USER}\")" 2>/dev/null || echo "")
   
   if [[ -z "${EXISTING_BINDING}" ]]; then
+    echo "  ➕ Adding correct binding..."
     gcloud iam service-accounts add-iam-policy-binding ${SA_EMAIL} \
       --project=${PROJECT_ID} \
       --role="roles/iam.workloadIdentityUser" \
@@ -105,7 +125,7 @@ for ENV in dev stage prod; do
     
     echo "  ✅ Granted Workload Identity User role"
   else
-    echo "  ⏭️  Workload Identity User role already granted"
+    echo "  ⏭️  Correct Workload Identity User role already exists"
   fi
   
   # 4. Output the provider resource name for GitHub Actions
