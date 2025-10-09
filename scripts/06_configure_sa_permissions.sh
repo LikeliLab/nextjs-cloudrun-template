@@ -228,7 +228,19 @@ else
   log_skipped "Cloud Run Developer for ${SA_EMAIL}"
 fi
 
-# 2. Create and apply custom Artifact Registry Pusher role (NO DELETE)
+# 2. Artifact Registry Reader (project-level, needed for Docker authentication)
+if ! iam_binding_exists "${PROJECT_ID}" "serviceAccount:${SA_EMAIL}" "roles/artifactregistry.reader"; then
+  gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/artifactregistry.reader" \
+    --condition=None \
+    --quiet
+  log_created "Artifact Registry Reader (project-level) for ${SA_EMAIL}"
+else
+  log_skipped "Artifact Registry Reader (project-level) for ${SA_EMAIL}"
+fi
+
+# 3. Create and apply custom Artifact Registry Pusher role (NO DELETE)
 create_artifact_registry_pusher_role "${PROJECT_ID}"
 
 if ! gcloud iam roles describe ArtifactRegistryPusher --project=${PROJECT_ID} &>/dev/null; then
@@ -248,7 +260,7 @@ else
   log_skipped "Artifact Registry Pusher role for ${SA_EMAIL}"
 fi
 
-# 3. Service Account User (SCOPED to runtime SA only)
+# 4. Service Account User (SCOPED to runtime SA only)
 if ! sa_iam_binding_exists "${RUNTIME_SA_EMAIL}" "serviceAccount:${SA_EMAIL}" "roles/iam.serviceAccountUser" "${PROJECT_ID}"; then
   gcloud iam service-accounts add-iam-policy-binding ${RUNTIME_SA_EMAIL} \
     --role="roles/iam.serviceAccountUser" \
@@ -303,7 +315,19 @@ else
   log_skipped "Cloud Run Developer for ${SA_EMAIL}"
 fi
 
-# 2. Create and apply custom Artifact Registry Pusher role (NO DELETE)
+# 2. Artifact Registry Reader (project-level, needed for Docker authentication)
+if ! iam_binding_exists "${PROJECT_ID}" "serviceAccount:${SA_EMAIL}" "roles/artifactregistry.reader"; then
+  gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/artifactregistry.reader" \
+    --condition=None \
+    --quiet
+  log_created "Artifact Registry Reader (project-level) for ${SA_EMAIL}"
+else
+  log_skipped "Artifact Registry Reader (project-level) for ${SA_EMAIL}"
+fi
+
+# 3. Create and apply custom Artifact Registry Pusher role (NO DELETE)
 create_artifact_registry_pusher_role "${PROJECT_ID}"
 
 if ! gcloud iam roles describe ArtifactRegistryPusher --project=${PROJECT_ID} &>/dev/null; then
@@ -323,7 +347,7 @@ else
   log_skipped "Artifact Registry Pusher role for ${SA_EMAIL}"
 fi
 
-# 3. Service Account User (scoped to runtime SA)
+# 4. Service Account User (scoped to runtime SA)
 if ! sa_iam_binding_exists "${RUNTIME_SA_EMAIL}" "serviceAccount:${SA_EMAIL}" "roles/iam.serviceAccountUser" "${PROJECT_ID}"; then
   gcloud iam service-accounts add-iam-policy-binding ${RUNTIME_SA_EMAIL} \
     --role="roles/iam.serviceAccountUser" \
@@ -378,7 +402,19 @@ else
   log_skipped "Cloud Run Developer for ${SA_EMAIL}"
 fi
 
-# 2. Artifact Registry Writer (FULL access in dev - including delete)
+# 2. Artifact Registry Reader (project-level, needed for Docker authentication)
+if ! iam_binding_exists "${PROJECT_ID}" "serviceAccount:${SA_EMAIL}" "roles/artifactregistry.reader"; then
+  gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/artifactregistry.reader" \
+    --condition=None \
+    --quiet
+  log_created "Artifact Registry Reader (project-level) for ${SA_EMAIL}"
+else
+  log_skipped "Artifact Registry Reader (project-level) for ${SA_EMAIL}"
+fi
+
+# 3. Artifact Registry Writer (FULL access in dev - including delete)
 if ! repo_iam_binding_exists "${ARTIFACT_REGISTRY_NAME}" "${ARTIFACT_REGISTRY_LOCATION}" "serviceAccount:${SA_EMAIL}" "roles/artifactregistry.writer" "${PROJECT_ID}"; then
   gcloud artifacts repositories add-iam-policy-binding ${ARTIFACT_REGISTRY_NAME} \
     --location=${ARTIFACT_REGISTRY_LOCATION} \
@@ -391,7 +427,7 @@ else
   log_skipped "Artifact Registry Writer role for ${SA_EMAIL}"
 fi
 
-# 3. Service Account User (scoped to runtime SA)
+# 4. Service Account User (scoped to runtime SA)
 if ! sa_iam_binding_exists "${RUNTIME_SA_EMAIL}" "serviceAccount:${SA_EMAIL}" "roles/iam.serviceAccountUser" "${PROJECT_ID}"; then
   gcloud iam service-accounts add-iam-policy-binding ${RUNTIME_SA_EMAIL} \
     --role="roles/iam.serviceAccountUser" \
