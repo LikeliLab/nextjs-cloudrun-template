@@ -216,14 +216,14 @@ if ! gcloud iam service-accounts describe ${RUNTIME_SA_EMAIL} --project=${PROJEC
   exit 1
 fi
 
-# 1. Cloud Run Developer
+# 1. Cloud Run Developer (scoped to region for initial deployment)
 if ! iam_binding_exists "${PROJECT_ID}" "serviceAccount:${SA_EMAIL}" "roles/run.developer"; then
   gcloud projects add-iam-policy-binding ${PROJECT_ID} \
     --member="serviceAccount:${SA_EMAIL}" \
     --role="roles/run.developer" \
-    --condition='expression=resource.name == "projects/'${PROJECT_ID}'/locations/'${CLOUD_RUN_REGION}'/services/'${APP_NAME}'",title=OnlyAppService,description=Deploy '${APP_NAME}' only' \
+    --condition='expression=resource.name.startsWith("projects/'${PROJECT_ID}'/locations/'${CLOUD_RUN_REGION}'/services/"),title=RegionScopedCloudRun,description=Deploy to '${CLOUD_RUN_REGION}' region only' \
     --quiet
-  log_created "Cloud Run Developer (scoped to ${APP_NAME}) for ${SA_EMAIL}"
+  log_created "Cloud Run Developer (scoped to ${CLOUD_RUN_REGION} region) for ${SA_EMAIL}"
 else
   log_skipped "Cloud Run Developer for ${SA_EMAIL}"
 fi
