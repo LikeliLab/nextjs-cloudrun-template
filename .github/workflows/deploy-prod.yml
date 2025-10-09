@@ -1,0 +1,139 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGION: us-central1
+  SERVICE_NAME: nextjs-app
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER_PROD }}
+          service_account: ${{ secrets.SA_EMAIL_PROD }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker to use gcloud as a credential helper
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ secrets.PROJECT_ID_PROD }}/${{ secrets.ARTIFACT_REGISTRY_REPO }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          
+          docker build \
+            --tag $IMAGE_TAG \
+            --build-arg NODE_ENV=production \
+            .
+          
+          docker push $IMAGE_TAG
+          
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image ${{ env.IMAGE_TAG }} \
+            --platform managed \
+            --region ${{ env.REGION }} \
+            --project ${{ secrets.PROJECT_ID_PROD }} \
+            --allow-unauthenticated \
+            --set-env-vars="NODE_ENV=production,ENVIRONMENT=production" \
+            --memory=2Gi \
+            --cpu=2 \
+            --min-instances=2 \
+            --max-instances=50 \
+            --timeout=300 \
+            --port=3000 \
+            --no-traffic
+
+      - name: Gradually shift traffic to new revision
+        run: |
+          NEW_REVISION=$(gcloud run revisions list \
+            --service=${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --project=${{ secrets.PROJECT_ID_PROD }} \
+            --format="value(metadata.name)" \
+            --limit=1)
+          
+          echo "Deploying revision: $NEW_REVISION"
+          
+          # Start with 10% traffic
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --to-revisions=$NEW_REVISION=10 \
+            --region=${{ env.REGION }} \
+            --project=${{ secrets.PROJECT_ID_PROD }}
+          
+          echo "✅ 10% traffic routed to new revision"
+          echo "::notice title=Traffic Split::10% traffic routed to $NEW_REVISION"
+          
+          # Wait and monitor (in a real scenario, you'd have monitoring here)
+          sleep 30
+          
+          # Route 50% traffic
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --to-revisions=$NEW_REVISION=50 \
+            --region=${{ env.REGION }} \
+            --project=${{ secrets.PROJECT_ID_PROD }}
+          
+          echo "✅ 50% traffic routed to new revision"
+          echo "::notice title=Traffic Split::50% traffic routed to $NEW_REVISION"
+          
+          # Wait and monitor
+          sleep 30
+          
+          # Route all traffic
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --to-revisions=$NEW_REVISION=100 \
+            --region=${{ env.REGION }} \
+            --project=${{ secrets.PROJECT_ID_PROD }}
+          
+          echo "✅ 100% traffic routed to new revision"
+          echo "::notice title=Deployment Complete::All traffic routed to $NEW_REVISION"
+
+      - name: Get service URL
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --platform managed \
+            --region ${{ env.REGION }} \
+            --project ${{ secrets.PROJECT_ID_PROD }} \
+            --format 'value(status.url)')
+          
+          echo "🚀 Production deployment successful!"
+          echo "Service URL: $SERVICE_URL"
+          echo "::notice title=Production Deployed::Production environment deployed to $SERVICE_URL"
+
+      - name: Run production health checks
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --platform managed \
+            --region ${{ env.REGION }} \
+            --project ${{ secrets.PROJECT_ID_PROD }} \
+            --format 'value(status.url)')
+          
+          echo "Running production health checks against $SERVICE_URL"
+          
+          # Basic health check
+          curl -f "$SERVICE_URL" || exit 1
+          
+          # Additional health checks could go here
+          
+          echo "✅ Production health checks passed"
