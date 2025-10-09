@@ -21,28 +21,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run linting
-        run: npm run lint
-
-      - name: Type check
-        run: npx tsc --noEmit
-
-      - name: Build application
-        run: npm run build
-        env:
-          NEXT_TELEMETRY_DISABLED: 1
-
-      - name: Run security audit
-        run: npm audit --audit-level=high
+      - name: Run CI
+        uses: ./.github/actions/ci
 
   deploy:
     name: Deploy to Development
@@ -58,55 +38,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER_DEV }}
-          service_account: ${{ secrets.SA_EMAIL_DEV }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Configure Docker to use gcloud as a credential helper
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
-
-      - name: Build and push Docker image
-        run: |
-          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ secrets.PROJECT_ID_DEV }}/${{ secrets.ARTIFACT_REGISTRY_REPO }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
-          
-          docker build \
-            --tag $IMAGE_TAG \
-            --build-arg NODE_ENV=production \
-            .
-          
-          docker push $IMAGE_TAG
-          
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-
       - name: Deploy to Cloud Run
-        run: |
-          gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image ${{ env.IMAGE_TAG }} \
-            --platform managed \
-            --region ${{ env.REGION }} \
-            --project ${{ secrets.PROJECT_ID_DEV }} \
-            --allow-unauthenticated \
-            --set-env-vars="NODE_ENV=production,ENVIRONMENT=dev" \
-            --memory=512Mi \
-            --cpu=1 \
-            --min-instances=0 \
-            --max-instances=10 \
-            --timeout=300 \
-            --port=3000
-
-      - name: Get service URL
-        run: |
-          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
-            --platform managed \
-            --region ${{ env.REGION }} \
-            --project ${{ secrets.PROJECT_ID_DEV }} \
-            --format 'value(status.url)')
-          
-          echo "🚀 Dev deployment successful!"
-          echo "Service URL: $SERVICE_URL"
-          echo "::notice title=Deployment Success::Dev environment deployed to $SERVICE_URL"
+        uses: ./.github/actions/deploy-to-cloudrun
+        with:
+          workload-identity-provider: ${{ secrets.WIF_PROVIDER_DEV }}
+          service-account: ${{ secrets.SA_EMAIL_DEV }}
+          project-id: ${{ secrets.PROJECT_ID_DEV }}
+          artifact-registry-repo: ${{ secrets.ARTIFACT_REGISTRY_REPO }}
+          region: ${{ env.REGION }}
+          service-name: ${{ env.SERVICE_NAME }}
+          environment: 'dev'
+          memory: '512Mi'
+          cpu: '1'
+          min-instances: '0'
+          max-instances: '10'

@@ -18,28 +18,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run linting
-        run: npm run lint
-
-      - name: Type check
-        run: npx tsc --noEmit
-
-      - name: Build application
-        run: npm run build
-        env:
-          NEXT_TELEMETRY_DISABLED: 1
-
-      - name: Run security audit
-        run: npm audit --audit-level=high
+      - name: Run CI
+        uses: ./.github/actions/ci
 
   deploy:
     name: Deploy to Staging
@@ -54,70 +34,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER_STAGE }}
-          service_account: ${{ secrets.SA_EMAIL_STAGE }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Configure Docker to use gcloud as a credential helper
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
-
-      - name: Build and push Docker image
-        run: |
-          IMAGE_TAG="${{ env.REGION }}-docker.pkg.dev/${{ secrets.PROJECT_ID_STAGE }}/${{ secrets.ARTIFACT_REGISTRY_REPO }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
-          
-          docker build \
-            --tag $IMAGE_TAG \
-            --build-arg NODE_ENV=production \
-            .
-          
-          docker push $IMAGE_TAG
-          
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-
       - name: Deploy to Cloud Run
-        run: |
-          gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image ${{ env.IMAGE_TAG }} \
-            --platform managed \
-            --region ${{ env.REGION }} \
-            --project ${{ secrets.PROJECT_ID_STAGE }} \
-            --allow-unauthenticated \
-            --set-env-vars="NODE_ENV=production,ENVIRONMENT=stage" \
-            --memory=1Gi \
-            --cpu=1 \
-            --min-instances=1 \
-            --max-instances=20 \
-            --timeout=300 \
-            --port=3000
-
-      - name: Get service URL
-        run: |
-          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
-            --platform managed \
-            --region ${{ env.REGION }} \
-            --project ${{ secrets.PROJECT_ID_STAGE }} \
-            --format 'value(status.url)')
-          
-          echo "🚀 Stage deployment successful!"
-          echo "Service URL: $SERVICE_URL"
-          echo "::notice title=Deployment Success::Stage environment deployed to $SERVICE_URL"
-
-      - name: Run smoke tests
-        run: |
-          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
-            --platform managed \
-            --region ${{ env.REGION }} \
-            --project ${{ secrets.PROJECT_ID_STAGE }} \
-            --format 'value(status.url)')
-          
-          echo "Running smoke tests against $SERVICE_URL"
-          
-          # Basic health check
-          curl -f "$SERVICE_URL" || exit 1
-          
-          echo "✅ Smoke tests passed"
+        uses: ./.github/actions/deploy-to-cloudrun
+        with:
+          workload-identity-provider: ${{ secrets.WIF_PROVIDER_STAGE }}
+          service-account: ${{ secrets.SA_EMAIL_STAGE }}
+          project-id: ${{ secrets.PROJECT_ID_STAGE }}
+          artifact-registry-repo: ${{ secrets.ARTIFACT_REGISTRY_REPO }}
+          region: ${{ env.REGION }}
+          service-name: ${{ env.SERVICE_NAME }}
+          environment: 'stage'
+          memory: '1Gi'
+          cpu: '1'
+          min-instances: '1'
+          max-instances: '20'

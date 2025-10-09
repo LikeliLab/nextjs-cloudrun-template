@@ -1,0 +1,40 @@
+name: 'CI Checks'
+description: 'Run linting, type checking, building, and security audit'
+author: 'Michael Ellis'
+
+inputs:
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '20'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+      shell: bash
+
+    - name: Run linting
+      run: npm run lint
+      shell: bash
+
+    - name: Type check
+      run: npx tsc --noEmit
+      shell: bash
+
+    - name: Build application
+      run: npm run build
+      shell: bash
+      env:
+        NEXT_TELEMETRY_DISABLED: 1
+
+    - name: Run security audit
+      run: npm audit --audit-level=high
+      shell: bash
