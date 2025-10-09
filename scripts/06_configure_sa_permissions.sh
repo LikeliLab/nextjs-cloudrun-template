@@ -40,11 +40,21 @@ iam_binding_exists() {
   local project=$1
   local member=$2
   local role=$3
+  local condition_title=${4:-""}
   
-  gcloud projects get-iam-policy "${project}" \
-    --flatten="bindings[].members" \
-    --filter="bindings.role:${role} AND bindings.members:${member}" \
-    --format="value(bindings.role)" 2>/dev/null | grep -q "${role}"
+  if [[ -n "${condition_title}" ]]; then
+    # Check for binding with specific condition
+    gcloud projects get-iam-policy "${project}" \
+      --flatten="bindings[].members" \
+      --filter="bindings.role:${role} AND bindings.members:${member} AND bindings.condition.title:${condition_title}" \
+      --format="value(bindings.role)" 2>/dev/null | grep -q "${role}"
+  else
+    # Check for unconditional binding
+    gcloud projects get-iam-policy "${project}" \
+      --flatten="bindings[].members" \
+      --filter="bindings.role:${role} AND bindings.members:${member} AND NOT bindings.condition.title:*" \
+      --format="value(bindings.role)" 2>/dev/null | grep -q "${role}"
+  fi
 }
 
 # Check if an Artifact Registry repository IAM binding exists
@@ -172,7 +182,7 @@ for ENV in dev stage prod; do
   fi
   
   # Secret Manager accessor (scoped to app-specific secrets)
-  if ! iam_binding_exists "${PROJECT_ID}" "serviceAccount:${RUNTIME_SA_EMAIL}" "roles/secretmanager.secretAccessor"; then
+  if ! iam_binding_exists "${PROJECT_ID}" "serviceAccount:${RUNTIME_SA_EMAIL}" "roles/secretmanager.secretAccessor" "AppSecretsOnly"; then
     gcloud projects add-iam-policy-binding ${PROJECT_ID} \
       --member="serviceAccount:${RUNTIME_SA_EMAIL}" \
       --role="roles/secretmanager.secretAccessor" \
@@ -217,7 +227,7 @@ if ! gcloud iam service-accounts describe ${RUNTIME_SA_EMAIL} --project=${PROJEC
 fi
 
 # 1. Cloud Run Developer (scoped to region for initial deployment)
-if ! iam_binding_exists "${PROJECT_ID}" "serviceAccount:${SA_EMAIL}" "roles/run.developer"; then
+if ! iam_binding_exists "${PROJECT_ID}" "serviceAccount:${SA_EMAIL}" "roles/run.developer" "RegionScopedCloudRun"; then
   gcloud projects add-iam-policy-binding ${PROJECT_ID} \
     --member="serviceAccount:${SA_EMAIL}" \
     --role="roles/run.developer" \
@@ -304,13 +314,13 @@ if ! gcloud iam service-accounts describe ${RUNTIME_SA_EMAIL} --project=${PROJEC
 fi
 
 # 1. Cloud Run Developer (scoped to specific service)
-if ! iam_binding_exists "${PROJECT_ID}" "serviceAccount:${SA_EMAIL}" "roles/run.developer"; then
+if ! iam_binding_exists "${PROJECT_ID}" "serviceAccount:${SA_EMAIL}" "roles/run.developer" "AppServiceAccess"; then
   gcloud projects add-iam-policy-binding ${PROJECT_ID} \
     --member="serviceAccount:${SA_EMAIL}" \
     --role="roles/run.developer" \
-    --condition='expression=resource.name == "projects/'${PROJECT_ID}'/locations/'${CLOUD_RUN_REGION}'/services/'${APP_NAME}'",title=OnlyAppService,description=Deploy '${APP_NAME}' only' \
+    --condition='expression=resource.name.startsWith("projects/'${PROJECT_ID}'/locations/'${CLOUD_RUN_REGION}'/services/'${APP_NAME}'"),title=AppServiceAccess,description=Deploy '${APP_NAME}' service and its revisions' \
     --quiet
-  log_created "Cloud Run Developer (scoped to ${APP_NAME}) for ${SA_EMAIL}"
+  log_created "Cloud Run Developer (scoped to ${APP_NAME} service) for ${SA_EMAIL}"
 else
   log_skipped "Cloud Run Developer for ${SA_EMAIL}"
 fi
@@ -390,14 +400,14 @@ if ! gcloud iam service-accounts describe ${RUNTIME_SA_EMAIL} --project=${PROJEC
   exit 1
 fi
 
-# 1. Cloud Run Developer (scoped to specific service, OK for dev)
-if ! iam_binding_exists "${PROJECT_ID}" "serviceAccount:${SA_EMAIL}" "roles/run.developer"; then
+# 1. Cloud Run Developer (region-scoped for dev, allows service creation)
+if ! iam_binding_exists "${PROJECT_ID}" "serviceAccount:${SA_EMAIL}" "roles/run.developer" "RegionScopedCloudRun"; then
   gcloud projects add-iam-policy-binding ${PROJECT_ID} \
     --member="serviceAccount:${SA_EMAIL}" \
     --role="roles/run.developer" \
-    --condition='expression=resource.name == "projects/'${PROJECT_ID}'/locations/'${CLOUD_RUN_REGION}'/services/'${APP_NAME}'",title=OnlyAppService,description=Deploy '${APP_NAME}' only' \
+    --condition='expression=resource.name.startsWith("projects/'${PROJECT_ID}'/locations/'${CLOUD_RUN_REGION}'/services/"),title=RegionScopedCloudRun,description=Deploy to '${CLOUD_RUN_REGION}' region only' \
     --quiet
-  log_created "Cloud Run Developer (scoped to ${APP_NAME}) for ${SA_EMAIL}"
+  log_created "Cloud Run Developer (scoped to ${CLOUD_RUN_REGION} region) for ${SA_EMAIL}"
 else
   log_skipped "Cloud Run Developer for ${SA_EMAIL}"
 fi
