@@ -58,12 +58,13 @@ for ENV in dev stage prod; do
     echo "  ⏭️  Workload Identity Pool already exists"
   fi
   
-  # 2. Create Workload Identity Provider for GitHub (if it doesn't exist)
+  # 2. Create or Update Workload Identity Provider for GitHub
   if ! gcloud iam workload-identity-pools providers describe ${WIF_PROVIDER_ID} \
     --workload-identity-pool=${WIF_POOL_ID} \
     --location=global \
     --project=${PROJECT_ID} &>/dev/null; then
     
+    # Provider doesn't exist - CREATE it
     gcloud iam workload-identity-pools providers create-oidc ${WIF_PROVIDER_ID} \
       --workload-identity-pool=${WIF_POOL_ID} \
       --location=global \
@@ -75,7 +76,15 @@ for ENV in dev stage prod; do
     
     echo "  ✅ Created GitHub OIDC Provider with branch restriction: ${BRANCH_DESC}"
   else
-    echo "  ⏭️  GitHub OIDC Provider already exists"
+    # Provider exists - UPDATE it
+    gcloud iam workload-identity-pools providers update-oidc ${WIF_PROVIDER_ID} \
+      --workload-identity-pool=${WIF_POOL_ID} \
+      --location=global \
+      --project=${PROJECT_ID} \
+      --attribute-condition="${ATTRIBUTE_CONDITION}" \
+      --quiet
+    
+    echo "  🔄 Updated GitHub OIDC Provider with branch restriction: ${BRANCH_DESC}"
   fi
     
   # 3. Grant Service Account Token Creator role to the Workload Identity Pool
@@ -108,6 +117,7 @@ for ENV in dev stage prod; do
   echo "  workload_identity_provider: '${PROVIDER_RESOURCE_NAME}'"
   echo "  service_account: '${SA_EMAIL}'"
   echo "  Allowed from: ${GITHUB_OWNER}/${GITHUB_REPO}"
+done
 
 echo "================================================"
 echo "✅ Workload Identity Federation Setup Complete"

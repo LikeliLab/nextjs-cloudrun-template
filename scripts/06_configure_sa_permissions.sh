@@ -27,6 +27,56 @@ log_updated() {
   ((UPDATED_COUNT++))
 }
 
+custom_role_exists() {
+  local role_name=$1
+  local project=$2
+  gcloud iam roles describe "${role_name}" \
+    --project="${project}" \
+    --format="value(name)" 2>/dev/null || echo ""
+}
+
+# Check if a project-level IAM binding exists
+iam_binding_exists() {
+  local project=$1
+  local member=$2
+  local role=$3
+  
+  gcloud projects get-iam-policy "${project}" \
+    --flatten="bindings[].members" \
+    --filter="bindings.role:${role} AND bindings.members:${member}" \
+    --format="value(bindings.role)" 2>/dev/null | grep -q "${role}"
+}
+
+# Check if an Artifact Registry repository IAM binding exists
+repo_iam_binding_exists() {
+  local repo_name=$1
+  local location=$2
+  local member=$3
+  local role=$4
+  local project=$5
+  
+  gcloud artifacts repositories get-iam-policy "${repo_name}" \
+    --location="${location}" \
+    --project="${project}" \
+    --flatten="bindings[].members" \
+    --filter="bindings.role:${role} AND bindings.members:${member}" \
+    --format="value(bindings.role)" 2>/dev/null | grep -q "${role}"
+}
+
+# Check if a service account IAM binding exists
+sa_iam_binding_exists() {
+  local sa_email=$1
+  local member=$2
+  local role=$3
+  local project=$4
+  
+  gcloud iam service-accounts get-iam-policy "${sa_email}" \
+    --project="${project}" \
+    --flatten="bindings[].members" \
+    --filter="bindings.role:${role} AND bindings.members:${member}" \
+    --format="value(bindings.role)" 2>/dev/null | grep -q "${role}"
+}
+
 # Create custom Artifact Registry Pusher role (no delete permissions)
 create_artifact_registry_pusher_role() {
   local PROJECT_ID=$1
@@ -37,7 +87,7 @@ create_artifact_registry_pusher_role() {
       --project=${PROJECT_ID} \
       --title="Artifact Registry Pusher (No Delete)" \
       --description="Upload and manage container images without deletion permissions" \
-      --permissions=artifactregistry.dockerimages.get,artifactregistry.dockerimages.list,artifactregistry.dockerimages.update,artifactregistry.files.get,artifactregistry.files.list,artifactregistry.files.upload,artifactregistry.packages.get,artifactregistry.packages.list,artifactregistry.packages.update,artifactregistry.repositories.downloadArtifacts,artifactregistry.repositories.get,artifactregistry.repositories.list,artifactregistry.repositories.uploadArtifacts,artifactregistry.tags.create,artifactregistry.tags.get,artifactregistry.tags.list,artifactregistry.tags.update,artifactregistry.versions.get,artifactregistry.versions.list \
+      --permissions=artifactregistry.dockerimages.get,artifactregistry.dockerimages.list,artifactregistry.files.get,artifactregistry.files.list,artifactregistry.files.upload,artifactregistry.packages.get,artifactregistry.packages.list,artifactregistry.repositories.downloadArtifacts,artifactregistry.repositories.get,artifactregistry.repositories.list,artifactregistry.repositories.uploadArtifacts,artifactregistry.tags.create,artifactregistry.tags.get,artifactregistry.tags.list,artifactregistry.tags.update,artifactregistry.versions.get,artifactregistry.versions.list \
       --stage=GA \
       --quiet
     log_created "Custom ArtifactRegistryPusher role"
@@ -60,8 +110,6 @@ echo "================================================"
 echo ""
 echo "Runtime SAs need operational permissions for logging, tracing, and monitoring"
 echo ""
-
-SECRET_PREFIX="nextjs" 
 
 for ENV in dev stage prod; do
   PROJECT_ID="${PROJECT_PREFIX}-${ENV}"
