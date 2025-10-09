@@ -5,7 +5,7 @@ on:
       - dev
 env:
   REGION: us-central1 # TODO: update Cloud Run service region
-  
+  PROJECT_ID_DEV: nextjs-cloudrun-template-dev # TODO: update to your GCP project ID for dev
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   GitHub-actions-wif:
@@ -37,13 +37,19 @@ jobs:
               priority
           )"
         continue-on-error: true
-          
+
+      # Build the image first
+      - name: 'Build image'
+        run: |-
+          gcloud builds submit --tag gcr.io/${{ env.PROJECT_ID_DEV }}/hello-world
+
+      # Then deploy it
       - id: 'deploy-cloud-run'
-        name: 'Deploy Cloud Run Hello World Python App'
-        uses: 'google-GitHub-actions/deploy-cloudrun@v1'
+        uses: 'google-github-actions/deploy-cloudrun@v3'
         with:
           service: 'hello-world'
           region: 'us-central1'
+          image: 'gcr.io/${{ env.PROJECT_ID_DEV }}/hello-world'
 
 
       - name: 'Use output'
