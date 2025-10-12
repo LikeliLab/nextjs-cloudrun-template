@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 source "$SCRIPT_DIR/load_env.sh"
 load_env
 
-for ENV in dev stage prod; do
+for ENV in $PROJECT_ENVS; do
     PROJECT_ID="${PROJECT_PREFIX}-$ENV"
     
     # Check if project already exists
@@ -50,4 +50,4 @@ for ENV in dev stage prod; do
     echo "---"
 done
 
-echo "Setup complete!"
+echo "Projects Created!"
