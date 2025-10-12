@@ -52,5 +52,11 @@ for ENV in $PROJECT_ENVS; do
     --role="roles/iam.workloadIdentityUser" \
     --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/nextjs-app-dev/attribute.repository/$GITHUB_OWNER/$GITHUB_REPO"
 
+    # Add Service Account Token Creator role for impersonation
+    gcloud iam service-accounts add-iam-policy-binding "github-actions@${PROJECT_ID}.iam.gserviceaccount.com" \
+    --project="${PROJECT_ID}" \
+    --role="roles/iam.serviceAccountTokenCreator" \
+    --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/nextjs-app-dev/attribute.repository/$GITHUB_OWNER/$GITHUB_REPO"
+
 
 done
