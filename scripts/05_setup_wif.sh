@@ -29,7 +29,7 @@ for ENV in $PROJECT_ENVS; do
     
     # 2. Grant necessary roles
     echo "Granting IAM roles..."
-    for role in "roles/viewer" "roles/run.admin" "roles/storage.admin" "roles/artifactregistry.admin" "roles/clouddeploy.admin"; do
+    for role in "roles/viewer" "roles/run.admin" "roles/storage.admin" "roles/artifactregistry.admin" "roles/clouddeploy.admin" "roles/iam.serviceAccountUser"; do
         gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
             --member="serviceAccount:github-actions@${PROJECT_ID}.iam.gserviceaccount.com" \
             --role="${role}" \
