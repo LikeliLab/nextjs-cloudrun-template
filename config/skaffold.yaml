@@ -1,0 +1,16 @@
+apiVersion: skaffold/v4beta7
+kind: Config
+metadata:
+  name: nextjs-web-app-dev
+build:
+  artifacts:
+  - image: app
+    docker:
+      dockerfile: Dockerfile
+manifests:
+  rawYaml:
+  - service.yaml
+deploy:
+  cloudrun:
+    projectid: ${PROJECT_ID}
+    region: ${REGION}
