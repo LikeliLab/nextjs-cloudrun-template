@@ -22,6 +22,7 @@ for ENV in $PROJECT_ENVS; do
         cloudbuild.googleapis.com \
         artifactregistry.googleapis.com \
         cloudresourcemanager.googleapis.com \
+        clouddeploy.googleapis.com \
         --project $PROJECT_ID
 done
 
