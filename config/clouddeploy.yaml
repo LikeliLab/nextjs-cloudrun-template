@@ -2,9 +2,8 @@ apiVersion: deploy.cloud.google.com/v1
 kind: DeliveryPipeline
 metadata:
   name: nextjs-web-app-dev
-spec:
-  projectId: ${PROJECT_ID}
-  location: ${REGION}
+description: Delivery pipeline for NextJS web app
+serialPipeline:
   stages:
   - targetId: nextjs-web-app-dev-target
     profiles: []
@@ -13,8 +12,6 @@ apiVersion: deploy.cloud.google.com/v1
 kind: Target
 metadata:
   name: nextjs-web-app-dev-target
-spec:
-  projectId: ${PROJECT_ID}
+description: Cloud Run target for NextJS web app
+run:
   location: ${REGION}
-  run:
-    location: ${REGION}
