@@ -69,7 +69,7 @@ jobs:
           delivery_pipeline: '${{ env.APP }}'
           name: '${{ env.RELEASE_NAME }}'
           region: '${{ env.REGION }}'
-          description: '${{ env.GITHUB_COMMIT_MSG }}'
+          description: 'Release ${{ env.RELEASE_NAME }}'
           skaffold_file: 'config/skaffold.yaml'
           images: 'app=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.APP }}:${{ github.sha }}'
 
