@@ -10,7 +10,3 @@ build:
 manifests:
   rawYaml:
   - service.yaml
-deploy:
-  cloudrun:
-    projectid: ${PROJECT_ID}
-    region: ${REGION}
