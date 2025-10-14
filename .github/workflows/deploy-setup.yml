@@ -31,7 +31,7 @@ jobs:
       region: 'us-central1'
     secrets:
       workload-identity-provider: ${{ secrets.WIF_PROVIDER }}
-      service-account: ${{ secrets.SA_EMAIL }}
+      service-account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
   
   deploy-staging:
     if: github.ref == 'refs/heads/stage' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'stage')
