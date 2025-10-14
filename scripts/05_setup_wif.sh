@@ -5,12 +5,35 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 source "$SCRIPT_DIR/load_env.sh"
 load_env
 
+# ============================================================================
+# VALIDATION: Check that GITHUB_ORG_ID is numeric
+# ============================================================================
+echo "Validating configuration..."
+
+if ! [[ "$GITHUB_ORG_ID" =~ ^[0-9]+$ ]]; then
+  echo ""
+  echo "❌ ERROR: GITHUB_ORG_ID must be a numeric user ID, not a username!"
+  echo ""
+  echo "Current value: ${GITHUB_ORG_ID}"
+  echo ""
+  echo "To get your numeric GitHub user ID, run:"
+  echo "  curl -s https://api.github.com/users/YOUR_USERNAME | grep '\"id\":' | head -1 | grep -o '[0-9]*'"
+  echo ""
+  echo "Then update scripts/.env with the numeric value."
+  echo ""
+  exit 1
+fi
+
+echo "✅ GITHUB_ORG_ID is numeric: ${GITHUB_ORG_ID}"
+echo ""
+
 # Get WIF project number ONCE at the beginning
 WIF_PROJECT_NUMBER=$(gcloud projects describe "${WIF_PROJECT_ID}" --format="value(projectNumber)")
 
 echo "========================================="
 echo "WIF Management Project: ${WIF_PROJECT_ID}"
 echo "WIF Project Number: ${WIF_PROJECT_NUMBER}"
+echo "GitHub User ID: ${GITHUB_ORG_ID}"
 echo "========================================="
 echo ""
 
@@ -79,7 +102,12 @@ for ENV in $PROJECT_ENVS; do
   case $ENV in
     prod)
       GITHUB_ENV="production"
+      # IMPORTANT: Using numeric GITHUB_ORG_ID
       CONDITION="assertion.repository_owner_id == '${GITHUB_ORG_ID}' && assertion.environment == 'production' && assertion.ref == 'refs/heads/main'"
+      ;;
+    stage)
+      GITHUB_ENV="stage"
+      CONDITION="assertion.repository_owner_id == '${GITHUB_ORG_ID}' && assertion.environment == 'stage'"
       ;;
     *)
       GITHUB_ENV="${ENV}"
@@ -142,12 +170,12 @@ for ENV in $PROJECT_ENVS; do
   echo "✅ Setup Complete for ${PROJECT_ID}"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
-  echo "🔐 GitHub Secrets for '${ENV}' environment:"
+  echo "🔐 GitHub Secrets for '${GITHUB_ENV}' environment:"
   echo ""
-  echo "  Name:  WIF_PROVIDER_${ENV}"
+  echo "  Name:  WIF_PROVIDER"
   echo "  Value: ${PROVIDER_RESOURCE}"
   echo ""
-  echo "  Name:  SA_EMAIL_${ENV}"
+  echo "  Name:  SA_EMAIL"
   echo "  Value: ${GH_SA}"
   echo ""
   
