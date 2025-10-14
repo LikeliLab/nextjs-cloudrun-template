@@ -97,26 +97,25 @@ for ENV in $PROJECT_ENVS; do
   echo -n "OIDC Provider (${PROVIDER_NAME})... "
   
   ATTRIBUTE_MAPPING="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id,attribute.environment=assertion.environment,attribute.ref=assertion.ref"
-  
-  # Map environment name for GitHub (GitHub uses 'production', not 'prod')
-  case $ENV in
-    prod)
-      GITHUB_ENV="production"
-      # IMPORTANT: Using numeric GITHUB_ORG_ID
-      CONDITION="assertion.repository_owner_id == '${GITHUB_ORG_ID}' && assertion.environment == 'production' && assertion.ref == 'refs/heads/main'"
-      ;;
-    stage)
-      GITHUB_ENV="stage"
-      CONDITION="assertion.repository_owner_id == '${GITHUB_ORG_ID}' && assertion.environment == 'stage'"
-      ;;
-    *)
-      GITHUB_ENV="${ENV}"
-      CONDITION="assertion.repository_owner_id == '${GITHUB_ORG_ID}' && assertion.environment == '${ENV}'"
-      ;;
-  esac
+if [ "${ENV}" == "prod" ]; then
+    CONDITION="assertion.repository_owner_id == '${GITHUB_ORG_ID}' && assertion.environment == '${ENV}' && assertion.ref == 'refs/heads/main'"
+else
+    CONDITION="assertion.repository_owner_id == '${GITHUB_ORG_ID}' && assertion.environment == '${ENV}' && assertion.ref == 'refs/heads/${ENV}'"
+fi
   
   if provider_exists "${PROVIDER_NAME}" "${POOL_NAME}"; then
     echo "✓ Already exists"
+    if gcloud iam workload-identity-pools providers update-oidc "${PROVIDER_NAME}" \
+      --project="${WIF_PROJECT_ID}" \
+      --location="global" \
+      --workload-identity-pool="${POOL_NAME}" \
+      --issuer-uri="https://token.actions.githubusercontent.com" \
+      --attribute-mapping="${ATTRIBUTE_MAPPING}" \
+      --attribute-condition="${CONDITION}" 2>/dev/null; then
+      echo "✓ Updated condition"
+     else
+      echo "⚠ Failed to update (may have been created concurrently)"
+    fi
   else
     if gcloud iam workload-identity-pools providers create-oidc "${PROVIDER_NAME}" \
       --project="${WIF_PROJECT_ID}" \
