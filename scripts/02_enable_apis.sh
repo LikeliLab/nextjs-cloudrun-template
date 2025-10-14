@@ -22,9 +22,13 @@ for ENV in $PROJECT_ENVS; do
         cloudbuild.googleapis.com \
         artifactregistry.googleapis.com \
         cloudresourcemanager.googleapis.com \
-        clouddeploy.googleapis.com \
-        iamcredentials.googleapis.com \
+        clouddeploy.googleapis.com 
         --project $PROJECT_ID
 done
+
+gcloud config set project "$WIF_PROJECT_ID"
+    gcloud services enable \
+        iamcredentials.googleapis.com \
+        --project $WIF_PROJECT_ID
 
 echo "APIs Enabled!"
