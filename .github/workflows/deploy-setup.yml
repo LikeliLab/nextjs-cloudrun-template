@@ -20,6 +20,9 @@ on:
 jobs:
   deploy-dev:
     if: github.ref == 'refs/heads/dev' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
+    permissions:
+      contents: read
+      id-token: write      
     uses: ./.github/workflows/deploy.yml
     with:
       environment: dev
@@ -32,6 +35,9 @@ jobs:
   
   deploy-staging:
     if: github.ref == 'refs/heads/stage' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'stage')
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/deploy.yml
     with:
       environment: stage
@@ -44,6 +50,9 @@ jobs:
   
   deploy-production:
     if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/deploy.yml
     with:
       environment: production
