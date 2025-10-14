@@ -1,161 +1,158 @@
 #!/bin/bash
-set -e  # Exit on error
+set -e # Exit on error
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 source "$SCRIPT_DIR/load_env.sh"
 load_env
 
+# Get WIF project number ONCE at the beginning
+WIF_PROJECT_NUMBER=$(gcloud projects describe "${WIF_PROJECT_ID}" --format="value(projectNumber)")
+
+echo "========================================="
+echo "WIF Management Project: ${WIF_PROJECT_ID}"
+echo "WIF Project Number: ${WIF_PROJECT_NUMBER}"
+echo "========================================="
+echo ""
+
+# Function to check if WIF pool exists
+pool_exists() {
+  local pool_name=$1
+  gcloud iam workload-identity-pools describe "${pool_name}" \
+    --project="${WIF_PROJECT_ID}" \
+    --location="global" \
+    --format="value(name)" &>/dev/null
+  return $?
+}
+
+# Function to check if WIF provider exists
+provider_exists() {
+  local provider_name=$1
+  local pool_name=$2
+  gcloud iam workload-identity-pools providers describe "${provider_name}" \
+    --project="${WIF_PROJECT_ID}" \
+    --location="global" \
+    --workload-identity-pool="${pool_name}" \
+    --format="value(name)" &>/dev/null
+  return $?
+}
+
+# Function to check if service account has WIF binding
+sa_has_wif_binding() {
+  local sa_email=$1
+  local project_id=$2
+  gcloud iam service-accounts get-iam-policy "${sa_email}" \
+    --project="${project_id}" \
+    --format="value(bindings.members)" 2>/dev/null | grep -q "principalSet"
+  return $?
+}
+
 for ENV in $PROJECT_ENVS; do
-    PROJECT_ID="${PROJECT_PREFIX}-$ENV"
-    PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)")
-    
-    echo "========================================="
-    echo "Setting up WIF for project: $PROJECT_ID"
-    echo "Project Number: $PROJECT_NUMBER"
-    echo "========================================="
-    
-    # 1. Create service account if it doesn't exist
-    echo "Checking GitHub Actions service account..."
-    if gcloud iam service-accounts describe "github-actions@${PROJECT_ID}.iam.gserviceaccount.com" --project="${PROJECT_ID}" &>/dev/null; then
-        echo "✓ Service account already exists"
+  PROJECT_ID="${PROJECT_PREFIX}-${ENV}"
+  POOL_NAME="github-pool-${ENV}"
+  PROVIDER_NAME="github-provider-${ENV}"
+  
+  echo "========================================="
+  echo "Setting up WIF for: ${PROJECT_ID} (${ENV})"
+  echo "========================================="
+  
+  # 1. Create Workload Identity Pool
+  echo -n "Workload Identity Pool (${POOL_NAME})... "
+  if pool_exists "${POOL_NAME}"; then
+    echo "✓ Already exists"
+  else
+    if gcloud iam workload-identity-pools create "${POOL_NAME}" \
+      --project="${WIF_PROJECT_ID}" \
+      --location="global" \
+      --display-name="GitHub Actions ${ENV} Pool" 2>/dev/null; then
+      echo "✓ Created"
     else
-        echo "Creating service account..."
-        gcloud iam service-accounts create github-actions \
-            --project="${PROJECT_ID}" \
-            --display-name="GitHub Actions Service Account" \
-            --description="Service account for GitHub Actions deployments"
-        echo "✓ Service account created"
+      echo "⚠ Failed to create (may have been created concurrently)"
     fi
-    
-    # 2. Grant necessary roles
-    echo "Granting IAM roles..."
-    for role in "roles/viewer" "roles/run.admin" "roles/storage.admin" "roles/artifactregistry.admin" "roles/clouddeploy.admin" "roles/iam.serviceAccountUser"; do
-        gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-            --member="serviceAccount:github-actions@${PROJECT_ID}.iam.gserviceaccount.com" \
-            --role="${role}" \
-            --condition=None \
-            --quiet 2>/dev/null || echo "✓ Role ${role} already exists"
-    done
-    echo "✓ IAM roles configured"
-    
-    # 3. Create workload identity pool if it doesn't exist
-    echo "Checking workload identity pool..."
-    if gcloud iam workload-identity-pools describe "nextjs-app-dev" \
-        --project="${PROJECT_ID}" \
-        --location="global" &>/dev/null; then
-        echo "✓ Workload identity pool already exists"
+  fi
+  
+  # 2. Create OIDC provider with security-hardened attribute mappings
+  echo -n "OIDC Provider (${PROVIDER_NAME})... "
+  
+  ATTRIBUTE_MAPPING="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id,attribute.environment=assertion.environment,attribute.ref=assertion.ref"
+  
+  # Map environment name for GitHub (GitHub uses 'production', not 'prod')
+  case $ENV in
+    prod)
+      GITHUB_ENV="production"
+      CONDITION="assertion.repository_owner_id == '${GITHUB_ORG_ID}' && assertion.environment == 'production' && assertion.ref == 'refs/heads/main'"
+      ;;
+    *)
+      GITHUB_ENV="${ENV}"
+      CONDITION="assertion.repository_owner_id == '${GITHUB_ORG_ID}' && assertion.environment == '${ENV}'"
+      ;;
+  esac
+  
+  if provider_exists "${PROVIDER_NAME}" "${POOL_NAME}"; then
+    echo "✓ Already exists"
+  else
+    if gcloud iam workload-identity-pools providers create-oidc "${PROVIDER_NAME}" \
+      --project="${WIF_PROJECT_ID}" \
+      --location="global" \
+      --workload-identity-pool="${POOL_NAME}" \
+      --issuer-uri="https://token.actions.githubusercontent.com" \
+      --attribute-mapping="${ATTRIBUTE_MAPPING}" \
+      --attribute-condition="${CONDITION}" 2>/dev/null; then
+      echo "✓ Created"
     else
-        echo "Creating workload identity pool..."
-        gcloud iam workload-identity-pools create "nextjs-app-dev" \
-            --project="${PROJECT_ID}" \
-            --location="global" \
-            --display-name="Nextjs app pool"
-        echo "✓ Workload identity pool created"
+      echo "⚠ Failed to create (may have been created concurrently)"
     fi
-    
-    # 4. Handle OIDC provider (check for DELETED state)
-    echo "Checking OIDC provider..."
-    PROVIDER_STATE=$(gcloud iam workload-identity-pools providers describe "github-oidc" \
-        --project="${PROJECT_ID}" \
-        --location="global" \
-        --workload-identity-pool="nextjs-app-dev" \
-        --format="value(state)" 2>/dev/null || echo "NOT_FOUND")
-    
-    if [ "$PROVIDER_STATE" = "DELETED" ]; then
-        echo "⚠ Provider is in DELETED state. Undeleting..."
-        gcloud iam workload-identity-pools providers undelete "github-oidc" \
-            --project="${PROJECT_ID}" \
-            --location="global" \
-            --workload-identity-pool="nextjs-app-dev"
-        echo "✓ Provider undeleted"
-        
-        # Check if attribute mapping is correct
-        CURRENT_MAPPING=$(gcloud iam workload-identity-pools providers describe "github-oidc" \
-            --project="${PROJECT_ID}" \
-            --location="global" \
-            --workload-identity-pool="nextjs-app-dev" \
-            --format="value(attributeMapping)" 2>/dev/null)
-        
-        if [[ ! "$CURRENT_MAPPING" == *"attribute.repository"* ]]; then
-            echo "⚠ Provider has incorrect attribute mapping. Deleting and recreating..."
-            gcloud iam workload-identity-pools providers delete "github-oidc" \
-                --project="${PROJECT_ID}" \
-                --location="global" \
-                --workload-identity-pool="nextjs-app-dev" \
-                --quiet
-            PROVIDER_STATE="NOT_FOUND"
-        fi
+  fi
+  
+  # 3. Bind service account to WIF pool
+  GH_SA="${GH_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+  
+  echo -n "Service Account WIF Binding (${GH_SA})... "
+  
+  if sa_has_wif_binding "${GH_SA}" "${PROJECT_ID}"; then
+    echo "✓ Already bound"
+  else
+    if gcloud iam service-accounts add-iam-policy-binding "${GH_SA}" \
+      --project="${PROJECT_ID}" \
+      --role="roles/iam.workloadIdentityUser" \
+      --member="principalSet://iam.googleapis.com/projects/${WIF_PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL_NAME}/attribute.environment/${GITHUB_ENV}" 2>/dev/null; then
+      echo "✓ Bound"
+    else
+      echo "⚠ Failed to bind (may already be bound)"
     fi
-    
-    if [ "$PROVIDER_STATE" = "NOT_FOUND" ]; then
-        echo "Creating OIDC provider with correct attribute mapping..."
-        gcloud iam workload-identity-pools providers create-oidc "github-oidc" \
-            --project="${PROJECT_ID}" \
-            --location="global" \
-            --workload-identity-pool="nextjs-app-dev" \
-            --display-name="GitHub OIDC Provider" \
-            --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-            --attribute-condition="assertion.repository_owner=='${GITHUB_OWNER}'" \
-            --issuer-uri="https://token.actions.githubusercontent.com"
-        echo "✓ OIDC provider created"
-    elif [ "$PROVIDER_STATE" = "ACTIVE" ]; then
-        # Verify attribute mapping
-        CURRENT_MAPPING=$(gcloud iam workload-identity-pools providers describe "github-oidc" \
-            --project="${PROJECT_ID}" \
-            --location="global" \
-            --workload-identity-pool="nextjs-app-dev" \
-            --format="value(attributeMapping)" 2>/dev/null)
-        
-        if [[ ! "$CURRENT_MAPPING" == *"attribute.repository"* ]]; then
-            echo "⚠ Provider exists but has incorrect attribute mapping. Recreating..."
-            gcloud iam workload-identity-pools providers delete "github-oidc" \
-                --project="${PROJECT_ID}" \
-                --location="global" \
-                --workload-identity-pool="nextjs-app-dev" \
-                --quiet
-            
-            gcloud iam workload-identity-pools providers create-oidc "github-oidc" \
-                --project="${PROJECT_ID}" \
-                --location="global" \
-                --workload-identity-pool="nextjs-app-dev" \
-                --display-name="GitHub OIDC Provider" \
-                --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-                --attribute-condition="assertion.repository_owner=='${GITHUB_OWNER}'" \
-                --issuer-uri="https://token.actions.githubusercontent.com"
-            echo "✓ OIDC provider recreated with correct mapping"
-        else
-            echo "✓ OIDC provider already exists with correct configuration"
-        fi
-    fi
-    
-    # 5. Bind service account to workload identity pool
-    echo "Configuring workload identity binding..."
-    gcloud iam service-accounts add-iam-policy-binding "github-actions@${PROJECT_ID}.iam.gserviceaccount.com" \
-        --project="${PROJECT_ID}" \
-        --role="roles/iam.workloadIdentityUser" \
-        --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/nextjs-app-dev/attribute.repository/${GITHUB_OWNER}/${GITHUB_REPO}" \
-        --condition=None \
-        --quiet 2>/dev/null || echo "✓ Workload identity binding already exists"
-    
-    echo "✓ Workload identity binding configured"
-    
-    # 6. Output GitHub secrets
-    echo ""
-    echo "==========================================="
-    echo "✅ Setup Complete for ${PROJECT_ID}"
-    echo "==========================================="
-    echo ""
-    echo "Add these secrets to your GitHub repository:"
-    echo "(Settings → Secrets and variables → Actions)"
-    echo ""
-    echo "Secret Name: WIF_PROVIDER"
-    echo "Value: projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/nextjs-app-dev/providers/github-oidc"
-    echo ""
-    echo "Secret Name: WIF_SERVICE_ACCOUNT"
-    echo "Value: github-actions@${PROJECT_ID}.iam.gserviceaccount.com"
-    echo ""
-    echo "==========================================="
-    echo ""
+  fi
+  
+  # 4. Get WIF provider resource name
+  echo -n "Retrieving WIF provider resource name... "
+  PROVIDER_RESOURCE=$(gcloud iam workload-identity-pools providers describe "${PROVIDER_NAME}" \
+    --project="${WIF_PROJECT_ID}" \
+    --location="global" \
+    --workload-identity-pool="${POOL_NAME}" \
+    --format="value(name)" 2>/dev/null)
+  
+  if [ -n "${PROVIDER_RESOURCE}" ]; then
+    echo "✓ Retrieved"
+  else
+    echo "✗ Failed to retrieve"
+    continue
+  fi
+  
+  # 5. Output GitHub secrets
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "✅ Setup Complete for ${PROJECT_ID}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo "🔐 GitHub Secrets for '${ENV}' environment:"
+  echo ""
+  echo "  Name:  WIF_PROVIDER_${ENV}"
+  echo "  Value: ${PROVIDER_RESOURCE}"
+  echo ""
+  echo "  Name:  SA_EMAIL_${ENV}"
+  echo "  Value: ${GH_SA}"
+  echo ""
+  
 done
 
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🎉 All environments configured successfully!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

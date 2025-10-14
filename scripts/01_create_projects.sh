@@ -50,4 +50,37 @@ for ENV in $PROJECT_ENVS; do
     echo "---"
 done
 
+if gcloud projects describe "$WIF_PROJECT_ID" &>/dev/null; then
+        echo "Project $WIF_PROJECT_ID already exists, skipping creation"
+    else
+        echo "Creating project $WIF_PROJECT_ID..."
+        if gcloud projects create "$WIF_PROJECT_ID" --name="$WIF_PROJECT_ID"; then
+            echo "Project $WIF_PROJECT_ID created successfully"
+        else
+            echo "Failed to create project $WIF_PROJECT_ID" >&2
+            continue
+        fi
+    fi
+    
+    # Check if billing account is already linked
+    CURRENT_BILLING=$(gcloud billing projects describe "$WIF_PROJECT_ID" \
+        --format="value(billingAccountName)" 2>/dev/null)
+    
+    if [ -n "$CURRENT_BILLING" ]; then
+        if [[ "$CURRENT_BILLING" == *"$BILLING_ACCOUNT"* ]]; then
+            echo "Billing account already linked to $WIF_PROJECT_ID"
+        else
+            echo "Different billing account linked to $WIF_PROJECT_ID: $CURRENT_BILLING"
+            echo "Updating to $BILLING_ACCOUNT..."
+            gcloud billing projects link "$WIF_PROJECT_ID" --billing-account="$BILLING_ACCOUNT"
+        fi
+    else
+        echo "Linking billing account to $WIF_PROJECT_ID..."
+        if gcloud billing projects link "$WIF_PROJECT_ID" --billing-account="$BILLING_ACCOUNT"; then
+            echo "Billing account linked successfully"
+        else
+            echo "Failed to link billing account to $WIF_PROJECT_ID" >&2
+        fi
+    fi
+
 echo "Projects Created!"

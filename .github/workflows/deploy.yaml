@@ -37,7 +37,7 @@ jobs:
         with:
           project_id: '${{ env.PROJECT_ID }}'
 
-      - name: 'Docker auth'
+      - name: Configure Docker for Artifact Registry
         run: |-
           gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
 
@@ -46,13 +46,18 @@ jobs:
           docker build -t "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.APP }}:${{ github.sha }}" .
           docker push "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.APP }}:${{ github.sha }}"
 
-      - name: 'Deploy to Cloud Run'
-        run: |-
-          gcloud run deploy ${{ env.APP }} \
-            --image=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.APP }}:${{ github.sha }} \
-            --region=${{ env.REGION }} \
-            --allow-unauthenticated \
-            --max-instances=100 \
-            --cpu=1 \
-            --memory=512Mi \
-            --port=3000
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.APP }}
+          region: ${{ env.REGION }}
+          image: ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.APP }}:${{ github.sha }}
+          env_vars: |
+            NODE_ENV=production
+            NEXT_PUBLIC_ENV=dev
+          flags: '--service-account=nextjs-runtime@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --allow-unauthenticated --memory=1Gi --cpu=1 --max-instances=10'
+      
+      - name: Output deployment URL
+        run: |
+          echo "🚀 Deployed dev to: ${{ steps.deploy.outputs.url }}"
