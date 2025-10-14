@@ -29,6 +29,7 @@ jobs:
       project-id: 'nextjs-web-app-dev'
       service-name: 'nextjs-app-dev'
       region: 'us-central1'
+      artifact-repo: 'nextjs-apps'
     secrets:
       workload-identity-provider: ${{ secrets.WIF_PROVIDER }}
       service-account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
@@ -44,6 +45,7 @@ jobs:
       project-id: 'nextjs-web-app-stage'
       service-name: 'nextjs-app-stage'
       region: 'us-central1'
+      artifact-repo: 'nextjs-apps'
     secrets:
       workload-identity-provider: ${{ secrets.WIF_PROVIDER_STAGE }}
       service-account: ${{ secrets.SA_EMAIL_STAGE }}
@@ -59,6 +61,7 @@ jobs:
       project-id: 'nextjs-web-app-prod'
       service-name: 'nextjs-app'
       region: 'us-central1'
+      artifact-repo: 'nextjs-apps'
     secrets:
       workload-identity-provider: ${{ secrets.WIF_PROVIDER_PROD }}
       service-account: ${{ secrets.SA_EMAIL_PROD }}

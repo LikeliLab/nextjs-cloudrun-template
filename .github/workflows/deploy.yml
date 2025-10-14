@@ -15,6 +15,9 @@ on:
       region:
         required: true
         type: string
+      artifact-repo:
+        required: true
+        type: string
     secrets:
       workload-identity-provider:
         required: true
@@ -54,14 +57,14 @@ jobs:
         run: |
           docker build \
             --build-arg NEXT_PUBLIC_ENV=${{ inputs.environment }} \
-            --tag "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/nextjs-repo/${{ inputs.service-name }}:${{ github.sha }}" \
-            --tag "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/nextjs-repo/${{ inputs.service-name }}:latest" \
+            --tag "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/${{ inputs.artifact-repo }}/${{ inputs.service-name }}:${{ github.sha }}" \
+            --tag "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/${{ inputs.artifact-repo }}/${{ inputs.service-name }}:latest" \
             .
       
       - name: Push Docker image to Artifact Registry
         run: |
-          docker push "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/nextjs-repo/${{ inputs.service-name }}:${{ github.sha }}"
-          docker push "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/nextjs-repo/${{ inputs.service-name }}:latest"
+          docker push "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/${{ inputs.artifact-repo }}/${{ inputs.service-name }}:${{ github.sha }}"
+          docker push "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/${{ inputs.artifact-repo }}/${{ inputs.service-name }}:latest"
       
       - name: Deploy to Cloud Run
         id: deploy
@@ -69,7 +72,7 @@ jobs:
         with:
           service: ${{ inputs.service-name }}
           region: ${{ inputs.region }}
-          image: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/nextjs-repo/${{ inputs.service-name }}:${{ github.sha }}
+          image: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/${{ inputs.artifact-repo }}/${{ inputs.service-name }}:${{ github.sha }}
           env_vars: |
             NODE_ENV=production
             NEXT_PUBLIC_ENV=${{ inputs.environment }}
