@@ -1,0 +1,55 @@
+name: Deploy to Multiple Environments
+
+on:
+  push:
+    branches:
+      - dev   # Triggers dev deployment
+      - stage   # Triggers staging deployment
+      - main      # Triggers prod deployment
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - stage
+          - production
+
+jobs:
+  deploy-dev:
+    if: github.ref == 'refs/heads/dev' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: dev
+      project-id: 'nextjs-web-app-dev'
+      service-name: 'nextjs-app-dev'
+      region: 'us-central1'
+    secrets:
+      workload-identity-provider: ${{ secrets.WIF_PROVIDER_DEV }}
+      service-account: ${{ secrets.SA_EMAIL_DEV }}
+  
+  deploy-staging:
+    if: github.ref == 'refs/heads/stage' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'stage')
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: stage
+      project-id: 'nextjs-web-app-stage'
+      service-name: 'nextjs-app-stage'
+      region: 'us-central1'
+    secrets:
+      workload-identity-provider: ${{ secrets.WIF_PROVIDER_STAGE }}
+      service-account: ${{ secrets.SA_EMAIL_STAGE }}
+  
+  deploy-production:
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      project-id: 'nextjs-web-app-prod'
+      service-name: 'nextjs-app'
+      region: 'us-central1'
+    secrets:
+      workload-identity-provider: ${{ secrets.WIF_PROVIDER_PROD }}
+      service-account: ${{ secrets.SA_EMAIL_PROD }}

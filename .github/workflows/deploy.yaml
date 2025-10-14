@@ -1,63 +1,80 @@
-name: Build app and create a release in Cloud Deploy
+name: Reusable Cloud Run Deployment
 
 on:
-  push:
-    branches:
-      - dev
-
-env:
-  PROJECT_ID: nextjs-web-app-dev # TODO: update Google Cloud project id
-  GAR_LOCATION: us-central1 # TODO: update Artifact Registry location
-  GAR_REPOSITORY: nextjs-apps # TODO: update Artifact Registry repository
-  REGION: us-central1 # TODO: update Cloud Run service region
-  APP: nextjs-web-app-dev
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      project-id:
+        required: true
+        type: string
+      service-name:
+        required: true
+        type: string
+      region:
+        required: true
+        type: string
+    secrets:
+      workload-identity-provider:
+        required: true
+      service-account:
+        required: true
 
 jobs:
   deploy:
-    # Add 'id-token' with the intended permissions for workload identity federation
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}  # Triggers GitHub environment protection rules
+    
     permissions:
       contents: 'read'
-      id-token: 'write'
-
-    runs-on: ubuntu-latest
+      id-token: 'write'  # REQUIRED for OIDC token generation
+    
     steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@v3'
-
-      - name: 'Google auth'
-        id: 'auth'
-        uses: 'google-github-actions/auth@v1'
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: '${{ secrets.WIF_PROVIDER }}' # e.g. - projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider
-          service_account: '${{ secrets.WIF_SERVICE_ACCOUNT }}' # e.g. - my-service-account@my-project.iam.gserviceaccount.com
-          project_id: '${{ env.PROJECT_ID }}'
-
-      - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@v1'
-        with:
-          project_id: '${{ env.PROJECT_ID }}'
-
+          workload_identity_provider: ${{ secrets.workload-identity-provider }}
+          service_account: ${{ secrets.service-account }}
+          token_format: 'access_token'
+          create_credentials_file: true
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
       - name: Configure Docker for Artifact Registry
-        run: |-
-          gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
-
-      - name: 'Build and push container'
-        run: |-
-          docker build -t "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.APP }}:${{ github.sha }}" .
-          docker push "${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.APP }}:${{ github.sha }}"
-
+        run: |
+          gcloud auth configure-docker ${{ inputs.region }}-docker.pkg.dev
+      
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_ENV=${{ inputs.environment }} \
+            --tag "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/nextjs-repo/${{ inputs.service-name }}:${{ github.sha }}" \
+            --tag "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/nextjs-repo/${{ inputs.service-name }}:latest" \
+            .
+      
+      - name: Push Docker image to Artifact Registry
+        run: |
+          docker push "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/nextjs-repo/${{ inputs.service-name }}:${{ github.sha }}"
+          docker push "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/nextjs-repo/${{ inputs.service-name }}:latest"
+      
       - name: Deploy to Cloud Run
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: ${{ env.APP }}
-          region: ${{ env.REGION }}
-          image: ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.APP }}:${{ github.sha }}
+          service: ${{ inputs.service-name }}
+          region: ${{ inputs.region }}
+          image: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/nextjs-repo/${{ inputs.service-name }}:${{ github.sha }}
           env_vars: |
             NODE_ENV=production
-            NEXT_PUBLIC_ENV=dev
-          flags: '--service-account=nextjs-runtime@${{ env.PROJECT_ID }}.iam.gserviceaccount.com --allow-unauthenticated --memory=1Gi --cpu=1 --max-instances=10'
+            NEXT_PUBLIC_ENV=${{ inputs.environment }}
+          flags: '--service-account=nextjs-runtime@${{ inputs.project-id }}.iam.gserviceaccount.com --allow-unauthenticated --memory=1Gi --cpu=1 --max-instances=10'
       
       - name: Output deployment URL
         run: |
-          echo "🚀 Deployed dev to: ${{ steps.deploy.outputs.url }}"
+          echo "🚀 Deployed ${{ inputs.environment }} to: ${{ steps.deploy.outputs.url }}"
