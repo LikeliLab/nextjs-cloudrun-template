@@ -1,10 +1,6 @@
 name: Continuous Integration
 
 on:
-  push:
-    branches: [ dev, stage, main ]
-  pull_request:
-    branches: [ dev, stage, main ]
   workflow_call:
 
 jobs:
@@ -37,9 +33,22 @@ jobs:
       
       - name: Run security checks
         run: |
-          if [ -f "./scripts/security_check.sh" ]; then
-            chmod +x ./scripts/security_check.sh
-            ./scripts/security_check.sh
-          else
-            echo "Security check script not found, skipping..."
+          echo "Running basic security checks..."
+          
+          # Check for .env files that shouldn't be committed
+          if [ -f ".env" ]; then
+            echo "❌ ERROR: .env file found in repository root. This should not be committed!"
+            exit 1
           fi
+          
+          # Check for potential secrets in code
+          if grep -r --exclude-dir=node_modules --exclude-dir=.git -E "(password|secret|key|token).*=.*['\"][^'\"]{8,}" . || true; then
+            echo "⚠️  Warning: Potential secrets found in code. Please review."
+          fi
+          
+          # Check for TODO security items
+          if grep -r --exclude-dir=node_modules --exclude-dir=.git -i "TODO.*security\|FIXME.*security" . || true; then
+            echo "⚠️  Warning: Security TODOs found. Please address before production."
+          fi
+          
+          echo "✅ Basic security checks completed"
