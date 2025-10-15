@@ -76,7 +76,7 @@ jobs:
           env_vars: |
             NODE_ENV=production
             NEXT_PUBLIC_ENV=${{ inputs.environment }}
-          flags: '--service-account=nextjs-runtime@${{ inputs.project-id }}.iam.gserviceaccount.com --allow-unauthenticated --memory=1Gi --cpu=1 --max-instances=10'
+          flags: '--service-account=cloudrun-runtime@${{ inputs.project-id }}.iam.gserviceaccount.com --allow-unauthenticated --memory=1Gi --cpu=1 --max-instances=10'
       
       - name: Output deployment URL
         run: |
