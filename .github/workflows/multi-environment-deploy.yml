@@ -1,0 +1,73 @@
+name: Deploy to Multiple Environments
+
+on:
+  push:
+    branches:
+      - dev   # Triggers dev deployment
+      - stage   # Triggers staging deployment
+      - main      # Triggers prod deployment
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - stage
+          - production
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+  
+  deploy-dev:
+    needs: ci
+    if: github.ref == 'refs/heads/dev' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
+    permissions:
+      contents: read
+      id-token: write      
+    uses: ./.github/workflows/reusable-cloudrun-deploy.yml
+    with:
+      environment: dev
+      project-id: 'nextjs-web-app-dev'
+      service-name: 'nextjs-app-dev'
+      region: 'us-central1'
+      artifact-repo: 'nextjs-apps'
+    secrets:
+      workload-identity-provider: ${{ secrets.WIF_PROVIDER }}
+      service-account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+  
+  deploy-staging:
+    needs: ci
+    if: github.ref == 'refs/heads/stage' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'stage')
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-cloudrun-deploy.yml
+    with:
+      environment: stage
+      project-id: 'nextjs-web-app-stage'
+      service-name: 'nextjs-app-stage'
+      region: 'us-central1'
+      artifact-repo: 'nextjs-apps'
+    secrets:
+      workload-identity-provider: ${{ secrets.WIF_PROVIDER_STAGE }}
+      service-account: ${{ secrets.SA_EMAIL_STAGE }}
+  
+  deploy-production:
+    needs: ci
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-cloudrun-deploy.yml
+    with:
+      environment: production
+      project-id: 'nextjs-web-app-prod'
+      service-name: 'nextjs-app'
+      region: 'us-central1'
+      artifact-repo: 'nextjs-apps'
+    secrets:
+      workload-identity-provider: ${{ secrets.WIF_PROVIDER_PROD }}
+      service-account: ${{ secrets.SA_EMAIL_PROD }}

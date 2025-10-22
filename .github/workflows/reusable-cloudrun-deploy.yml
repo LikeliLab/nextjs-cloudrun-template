@@ -1,0 +1,79 @@
+name: Reusable Cloud Run Deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      project-id:
+        required: true
+        type: string
+      service-name:
+        required: true
+        type: string
+      region:
+        required: true
+        type: string
+      artifact-repo:
+        required: true
+        type: string
+    secrets:
+      workload-identity-provider:
+        required: true
+      service-account:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}  # Triggers GitHub environment protection rules
+    
+    permissions:
+      contents: 'read'
+      id-token: 'write'  # REQUIRED for OIDC token generation
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.workload-identity-provider }}
+          service_account: ${{ secrets.service-account }}
+          token_format: 'access_token'
+          create_credentials_file: true
+      
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+      
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ inputs.region }}-docker.pkg.dev
+      
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_ENV=${{ inputs.environment }} \
+            --tag "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/${{ inputs.artifact-repo }}/${{ inputs.service-name }}:${{ github.sha }}" \
+            --tag "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/${{ inputs.artifact-repo }}/${{ inputs.service-name }}:latest" \
+            .
+      
+      - name: Push Docker image to Artifact Registry
+        run: |
+          docker push "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/${{ inputs.artifact-repo }}/${{ inputs.service-name }}:${{ github.sha }}"
+          docker push "${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/${{ inputs.artifact-repo }}/${{ inputs.service-name }}:latest"
+      
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ inputs.service-name }}
+          region: ${{ inputs.region }}
+          image: ${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/${{ inputs.artifact-repo }}/${{ inputs.service-name }}:${{ github.sha }}
+          env_vars: |
+            NODE_ENV=production
+            NEXT_PUBLIC_ENV=${{ inputs.environment }}
+          flags: '--service-account=cloudrun-runtime@${{ inputs.project-id }}.iam.gserviceaccount.com --allow-unauthenticated --memory=1Gi --cpu=1 --max-instances=10'

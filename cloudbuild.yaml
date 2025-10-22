@@ -1,0 +1,13 @@
+steps:
+# Build the image
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'us-central1-docker.pkg.dev/nextjs-web-app-dev/nextjs-apps/nextjs-web-app-dev', '.']
+# Push the image to Artifact Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'us-central1-docker.pkg.dev/nextjs-web-app-dev/nextjs-apps/nextjs-web-app-dev']
+# Deploy image to Cloud Run
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: gcloud
+  args: ['run', 'deploy', 'nextjs-web-app-dev', '--image', 'us-central1-docker.pkg.dev/nextjs-web-app-dev/nextjs-apps/nextjs-web-app-dev', '--region', 'us-central1']
+images:
+- 'us-central1-docker.pkg.dev/nextjs-web-app-dev/nextjs-apps/nextjs-web-app-dev'
